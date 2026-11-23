@@ -1,0 +1,79 @@
+{
+  "$comment": [
+    "treesync build configurations: debug, asan and release.",
+    "Usage: cmake --preset <name>, then cmake --build --preset <name>, then ctest --preset <name>.",
+    "Presets format 10 needs CMake 3.31 or later (the version on GitHub's Ubuntu 24.04 runner).",
+    "Format 10 is the first one that accepts $comment fields like this one."
+  ],
+  "version": 10,
+  "cmakeMinimumRequired": { "major": 3, "minor": 31, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "$comment": [
+        "Shared settings. Hidden: you never use it directly, every other preset inherits from it.",
+        "One build folder per preset (build/debug, build/asan, build/release), so configurations never overwrite each other.",
+        "compile_commands.json lists the exact compile command for each file: clang-tidy and editors read it."
+      ],
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "$comment": "Optimized build without debug symbols. The only one to use for performance measurements (phase 5).",
+      "inherits": "base",
+      "displayName": "Release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "$comment": "No optimization, with debug symbols (-g). The everyday build, the one to use in a debugger.",
+      "inherits": "base",
+      "displayName": "Debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "asan",
+      "$comment": [
+        "Debug + AddressSanitizer (invalid memory accesses) + UndefinedBehaviorSanitizer (undefined behavior).",
+        "Inherits from debug, so it keeps the debug symbols (-g).",
+        "-fsanitize=address,undefined is needed twice: when compiling (CMAKE_CXX_FLAGS) and when linking (CMAKE_EXE_LINKER_FLAGS), because the linker adds the sanitizer runtime library.",
+        "-fno-sanitize-recover=all: stop at the first error. By default UBSan prints a message and keeps going, so a test could still pass.",
+        "-fno-omit-frame-pointer: keeps the information needed for readable stack traces in sanitizer reports.",
+        "Never use this build to measure performance: the sanitizers slow the program down a lot."
+      ],
+      "inherits": "debug",
+      "displayName": "Debug + ASan/UBSan",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release", "$comment": "Builds in build/release." },
+    { "name": "debug",   "configurePreset": "debug",   "$comment": "Builds in build/debug." },
+    { "name": "asan",    "configurePreset": "asan",    "$comment": "Builds in build/asan." }
+  ],
+  "testPresets": [
+    {
+      "name": "test-base",
+      "$comment": [
+        "Shared test settings, hidden like the configure base preset.",
+        "outputOnFailure: show the output of a test only when it fails.",
+        "noTestsAction=error: fail when no test is found, so CI can never pass after running zero tests.",
+        "stopOnFailure=false: keep running the other tests after a failure, to see every failure at once."
+      ],
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    { "name": "release", "inherits": "test-base", "configurePreset": "release" },
+    { "name": "debug",   "inherits": "test-base", "configurePreset": "debug" },
+    { "name": "asan",    "inherits": "test-base", "configurePreset": "asan" }
+  ]
+}
